@@ -17,6 +17,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import net.sourceforge.fenixedu.util.ConnectionManager;
 
@@ -30,7 +32,9 @@ import org.fenixedu.spaces.domain.MetadataSpec;
 import org.fenixedu.spaces.domain.Space;
 import org.fenixedu.spaces.domain.SpaceClassification;
 import org.fenixedu.spaces.domain.occupation.Occupation;
-import org.fenixedu.spaces.domain.occupation.config.ExplicitConfig;
+import org.fenixedu.spaces.domain.occupation.config.ExplicitConfigWithSettings;
+import org.fenixedu.spaces.domain.occupation.config.ExplicitConfigWithSettings.Frequency;
+import org.fenixedu.spaces.domain.occupation.config.OccupationConfig;
 import org.fenixedu.spaces.domain.occupation.requests.OccupationRequest;
 import org.fenixedu.spaces.ui.InformationBean;
 import org.joda.time.DateTime;
@@ -57,7 +61,6 @@ import com.google.common.io.BaseEncoding;
 import com.google.common.reflect.TypeToken;
 import com.google.gson.Gson;
 import com.google.gson.JsonIOException;
-import com.google.gson.JsonObject;
 import com.google.gson.JsonSyntaxException;
 import com.google.gson.stream.JsonReader;
 
@@ -284,6 +287,18 @@ public class ImportSpacesTask extends CustomTask {
 
             }).toList();
         }
+
+        public DateTime getStartDateTime() {
+            return parse(beginDate, beginTime);
+        }
+
+        public DateTime getEndDateTime() {
+            return parse(endDate, endTime);
+        }
+
+        private DateTime parse(String date, String time) {
+            return DateTime.parse(date + " " + time, DateTimeFormat.forPattern("dd/MM/yyyy HH:mm:ss"));
+        }
     }
 
     public class SpaceBean {
@@ -351,7 +366,6 @@ public class ImportSpacesTask extends CustomTask {
                 @Override
                 public InformationBean apply(SpaceInformationBean input) {
                     InformationBean bean = new InformationBean();
-                    bean.setAllocatableCapacity(input.capacity);
                     bean.setBlueprintNumber(input.blueprintNumber);
                     final DateTime validFrom = dealWithDates(input.validFrom);
                     final DateTime validUntil = dealWithDates(input.validUntil);
@@ -365,10 +379,12 @@ public class ImportSpacesTask extends CustomTask {
                             classificationCode = "3.6"; //Apoio ao Ensino - Outros
                         }
                         bean.setClassification(getClassificationByCode(removeLeadingZeros(classificationCode)));
-                        bean.setMetadata(createMetadata(input));
                     } else {
                         bean.setClassification(getClassificationByType(type));
+
                     }
+                    bean.setMetadata(createMetadata(input, type));
+
                     bean.setName(input.name);
                     bean.setRawBlueprint(getBlueprint(validFrom, validUntil));
                     return bean;
@@ -410,22 +426,32 @@ public class ImportSpacesTask extends CustomTask {
                     return spaceClassification;
                 }
 
-                private Map<String, String> createMetadata(SpaceInformationBean bean) {
+                private Map<String, String> createMetadata(SpaceInformationBean bean, String type) {
                     Map<String, String> metadata = new HashMap<>();
-                    metadata.put("ageQualitity", dealWithBooleans(bean.ageQuality));
-                    metadata.put("heightQuality", dealWithBooleans(bean.heightQuality));
-                    metadata.put("illuminationQuality", dealWithBooleans(bean.illuminationQuality));
-                    metadata.put("securityQuality", dealWithBooleans(bean.securityQuality));
-                    metadata.put("distanceFromSanitaryInstalationsQuality",
-                            dealWithBooleans(bean.distanceFromSanitaryInstalationsQuality));
-                    metadata.put("doorNumber", bean.doorNumber);
-                    metadata.put("description", bean.description);
-                    if (bean.area != null) {
-                        metadata.put("area", bean.area.toString());
+
+                    /*
+                    "observations", "area", "description", "ageQualitity","distanceFromSanitaryInstalationsQuality","heightQuality",
+                            "illuminationQuality", "securityQuality", "doorNumber", "examCapacity",
+                     */
+                    if (type.equals("Room")) {
+                        metadata.put("observations", bean.observations);
+                        if (bean.area != null) {
+                            metadata.put("area", bean.area.toString());
+                        }
+                        metadata.put("description", bean.description);
+                        metadata.put("ageQualitity", dealWithBooleans(bean.ageQuality));
+                        metadata.put("distanceFromSanitaryInstalationsQuality",
+                                dealWithBooleans(bean.distanceFromSanitaryInstalationsQuality));
+                        metadata.put("heightQuality", dealWithBooleans(bean.heightQuality));
+                        metadata.put("illuminationQuality", dealWithBooleans(bean.illuminationQuality));
+                        metadata.put("securityQuality", dealWithBooleans(bean.securityQuality));
+                        metadata.put("doorNumber", bean.doorNumber);
                     }
-                    if (bean.level != null) {
-                        metadata.put("level", bean.level);
+
+                    if (type.equals("Floor")) {
+                        metadata.put("level", bean.name);
                     }
+
                     return metadata;
                 }
 
@@ -471,10 +497,10 @@ public class ImportSpacesTask extends CustomTask {
     @Override
     public void runTask() throws Exception {
         Gson gson = new Gson();
-        initMetadataSpecMap();
-        doClassifications(gson);
-        processSpaces(gson);
-//        processOccupations(gson);
+//        initMetadataSpecMap();
+//        doClassifications(gson);
+//        processSpaces(gson);
+        processOccupations(gson);
     }
 
     public void processOccupations(Gson gson) throws FileNotFoundException {
@@ -495,23 +521,66 @@ public class ImportSpacesTask extends CustomTask {
                 }
             }
 
-            final ExplicitConfig explicitConfig = new ExplicitConfig(new JsonObject(), importOccupationBean.getIntervals());
+            final OccupationConfig explicitConfig = getConfig(importOccupationBean);
 
-            final Occupation occupation =
-                    new Occupation(importOccupationBean.title, importOccupationBean.description, explicitConfig);
+            Occupation occupation =
+                    new Occupation(null, importOccupationBean.title, importOccupationBean.description, explicitConfig,
+                            getRequest(importOccupationBean));
 
             for (Space space : occupationSpaces) {
                 occupation.addSpace(space);
             }
+        }
 
-            String requestId = importOccupationBean.request;
-            if (!Strings.isNullOrEmpty(requestId)) {
-                OccupationRequest request = FenixFramework.getDomainObject(requestId);
+    }
 
-                if (FenixFramework.isDomainObjectValid(request)) {
-                    occupation.setRequest(request);
-                }
+    private OccupationRequest getRequest(ImportOccupationBean importOccupationBean) {
+        String requestId = importOccupationBean.request;
+        if (!Strings.isNullOrEmpty(requestId)) {
+            OccupationRequest request = FenixFramework.getDomainObject(requestId);
+            if (FenixFramework.isDomainObjectValid(request)) {
+                return request;
             }
+        }
+        return null;
+    }
+
+    private ExplicitConfigWithSettings getConfig(ImportOccupationBean bean) {
+
+        Frequency frequency = null;
+        Integer repeatsEvery = null;
+
+        if (bean.frequency == null) {
+            frequency = Frequency.NEVER;
+        } else if ("DAILY".equals(bean.frequency)) {
+            frequency = Frequency.WEEKLY;
+            repeatsEvery = 1;
+        } else if ("WEEKLY".equals(bean.frequency)) {
+            frequency = Frequency.WEEKLY;
+            repeatsEvery = 1;
+        } else if ("BIWEEKLY".equals(bean.frequency)) {
+            frequency = Frequency.WEEKLY;
+            repeatsEvery = 2;
+        }
+
+        return new ExplicitConfigWithSettings(bean.getStartDateTime(), bean.getEndDateTime(), Boolean.FALSE, repeatsEvery,
+                frequency, getWeekdays(bean), null, bean.getIntervals());
+    }
+
+    private List<Integer> getWeekdays(ImportOccupationBean bean) {
+        if ("WEEKLY".equals(bean.frequency) || "BIWEEKLY".equals(bean.frequency)) { // weekly and biweekly with the day of the week of the start date
+            return IntStream.of(bean.getStartDateTime().getDayOfWeek()).boxed().collect(Collectors.toList());
+        } else if ("DAILY".equals(bean.frequency)) { //daily is weekly with workdays plus saturday or sunday if selected
+            List<Integer> collect = IntStream.rangeClosed(1, 5).boxed().collect(Collectors.toList());
+            if (bean.saturday != null && bean.saturday) {
+                collect.add(6);
+            }
+            if (bean.sunday != null && bean.sunday) {
+                collect.add(7);
+            }
+            return collect;
+        } else { // no frequency, no weekdays
+            return null;
         }
     }
 
@@ -602,14 +671,14 @@ public class ImportSpacesTask extends CustomTask {
 
     private Space update(Space space, SpaceBean spaceBean) {
         for (InformationBean infoBean : spaceBean.beans()) {
-            infoBean.getMetadata().put("examCapacity", spaceBean.examCapacity == null ? null : spaceBean.examCapacity.toString());
-//            infoBean.getMetadata().put("normalCapacity",
-//                    spaceBean.normalCapacity == null ? null : spaceBean.normalCapacity.toString());
-            if (spaceBean.normalCapacity != null) {
+            if (spaceBean.examCapacity != null) {
+                infoBean.getMetadata().put("examCapacity", spaceBean.examCapacity.toString());
                 infoBean.setAllocatableCapacity(spaceBean.normalCapacity);
             }
             space.bean(infoBean);
         }
+
+        space.setCreated(DateTimeFormat.forPattern("dd/MM/yyyy").parseDateTime(spaceBean.createdOn));
         final PersistentGroup occupationGroup = FenixFramework.getDomainObject(spaceBean.occupationGroup);
         final PersistentGroup lessonOccupationsAccessGroup =
                 FenixFramework.getDomainObject(spaceBean.lessonOccupationsAccessGroup);
