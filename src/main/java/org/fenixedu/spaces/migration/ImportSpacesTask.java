@@ -373,6 +373,7 @@ public class ImportSpacesTask extends CustomTask {
                     bean.setValidUntil(validUntil);
                     bean.setArea(input.area);
                     bean.setIdentification(input.identification);
+                    bean.setAllocatableCapacity(input.capacity);
                     String classificationCode = input.classificationCode;
                     if (type.equals("Room")) {
                         if (Strings.isNullOrEmpty(classificationCode)) {
@@ -497,10 +498,10 @@ public class ImportSpacesTask extends CustomTask {
     @Override
     public void runTask() throws Exception {
         Gson gson = new Gson();
-//        initMetadataSpecMap();
-//        doClassifications(gson);
-//        processSpaces(gson);
-        processOccupations(gson);
+        initMetadataSpecMap();
+        doClassifications(gson);
+        processSpaces(gson);
+//        processOccupations(gson);
     }
 
     public void processOccupations(Gson gson) throws FileNotFoundException {
@@ -589,10 +590,6 @@ public class ImportSpacesTask extends CustomTask {
         final List<SpaceBean> fromJson = gson.fromJson(new JsonReader(new FileReader(file)), new TypeToken<List<SpaceBean>>() {
         }.getType());
 
-//        for (SpaceBean spaceBean : fromJson) {
-//            idToBeansMap.put(spaceBean.externalId, spaceBean);
-//        }
-
         final List<List<SpaceBean>> partitions = Lists.partition(fromJson, 1000);
         taskLog("Processing chunks of 1000, total : %d\n", partitions.size());
         for (List<SpaceBean> partition : partitions) {
@@ -615,15 +612,16 @@ public class ImportSpacesTask extends CustomTask {
         });
     }
 
-    private Space process(final SpaceBean spaceBean) {
+    private void process(final SpaceBean spaceBean) {
         if (spaceBean == null) {
-            return null;
+            return;
         }
-        return update((Space) FenixFramework.getDomainObject(getNewSpaceId(spaceBean.externalId)), spaceBean);
-//        if (!beanToSpaceMap.containsKey(spaceBean)) {
-//            beanToSpaceMap.put(spaceBean, create(process(idToBeansMap.get(spaceBean.parentExternalId)), spaceBean));
-//        }
-//        return beanToSpaceMap.get(spaceBean);
+        Space space = (Space) FenixFramework.getDomainObject(getNewSpaceId(spaceBean.externalId));
+        if (!FenixFramework.isDomainObjectValid(space)) {
+            taskLog("Space doesn't exists %s\n", spaceBean.externalId);
+        } else {
+            update(space, spaceBean);
+        }
     }
 
     private String getNewSpaceId(String externalId) {
@@ -669,11 +667,10 @@ public class ImportSpacesTask extends CustomTask {
         }
     }
 
-    private Space update(Space space, SpaceBean spaceBean) {
+    private void update(Space space, SpaceBean spaceBean) {
         for (InformationBean infoBean : spaceBean.beans()) {
             if (spaceBean.examCapacity != null) {
                 infoBean.getMetadata().put("examCapacity", spaceBean.examCapacity.toString());
-                infoBean.setAllocatableCapacity(spaceBean.normalCapacity);
             }
             space.bean(infoBean);
         }
@@ -707,59 +704,5 @@ public class ImportSpacesTask extends CustomTask {
         } else {
             space.setManagementAccessGroup((Group) null);
         }
-        return space;
     }
-
-//    private Space create(final Space parent, final SpaceBean spaceBean) {
-//        return FenixFramework.getTransactionManager().withTransaction(new CallableWithoutException<Space>() {
-//
-//            @Override
-//            public Space call() {
-//                return innerCreate(parent, spaceBean);
-//            }
-//
-//        });
-//    }
-
-//    private Space innerCreate(Space parent, SpaceBean spaceBean) {
-//        Space space = new Space(parent, (Information) null);
-//        for (InformationBean infoBean : spaceBean.beans()) {
-//            infoBean.getMetadata().put("examCapacity", spaceBean.examCapacity == null ? null : spaceBean.examCapacity.toString());
-//            if (spaceBean.normalCapacity != null) {
-//                infoBean.setAllocatableCapacity(spaceBean.normalCapacity);
-//            }
-//            space.bean(infoBean);
-//        }
-//        final PersistentGroup occupationGroup = FenixFramework.getDomainObject(spaceBean.occupationGroup);
-//        final PersistentGroup lessonOccupationsAccessGroup =
-//                FenixFramework.getDomainObject(spaceBean.lessonOccupationsAccessGroup);
-//        final PersistentGroup writtenEvaluationOccupationsAccessGroup =
-//                FenixFramework.getDomainObject(spaceBean.writtenEvaluationOccupationsAccessGroup);
-//        final PersistentGroup managementGroup = FenixFramework.getDomainObject(spaceBean.managementSpaceGroup);
-//
-//        Group group = NobodyGroup.get();
-//
-//        if (occupationGroup != null) {
-//            group = group.or(occupationGroup.toGroup());
-//        }
-//
-//        if (lessonOccupationsAccessGroup != null) {
-//            group = group.or(lessonOccupationsAccessGroup.toGroup());
-//        }
-//
-//        if (writtenEvaluationOccupationsAccessGroup != null) {
-//            group = group.or(writtenEvaluationOccupationsAccessGroup.toGroup());
-//        }
-//
-//        space.setOccupationsAccessGroup(group.equals(NobodyGroup.get()) ? null : group);
-//
-//        if (FenixFramework.isDomainObjectValid(managementGroup)) {
-//            space.setManagementAccessGroup(managementGroup.toGroup());
-//        } else {
-//            space.setManagementAccessGroup((Group) null);
-//        }
-//
-//        return space;
-//    }
-
 }
