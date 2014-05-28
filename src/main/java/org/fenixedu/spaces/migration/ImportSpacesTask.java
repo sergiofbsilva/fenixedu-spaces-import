@@ -86,9 +86,6 @@ public class ImportSpacesTask extends CustomTask {
                 "Room",
                 new MetadataSpec("observations", new LocalizedString.Builder().with(LocalePT, "Observações")
                         .with(LocaleEN, "Observations").build(), String.class, false, ""));
-        codeToMetadataSpecMap.put("Room",
-                new MetadataSpec("area", new LocalizedString.Builder().with(LocalePT, "Área").with(LocaleEN, "Area").build(),
-                        BigDecimal.class, false, "0"));
         codeToMetadataSpecMap.put(
                 "Room",
                 new MetadataSpec("description", new LocalizedString.Builder().with(LocalePT, "Descrição")
@@ -100,8 +97,8 @@ public class ImportSpacesTask extends CustomTask {
         codeToMetadataSpecMap.put(
                 "Room",
                 new MetadataSpec("distanceFromSanitaryInstalationsQuality", new LocalizedString.Builder()
-                .with(LocalePT, "Qualidade na distância às instalações sanitárias")
-                .with(LocaleEN, "Distance From Sanitary Instalations Quality").build(), java.lang.Boolean.class, true,
+                        .with(LocalePT, "Qualidade na distância às instalações sanitárias")
+                        .with(LocaleEN, "Distance From Sanitary Instalations Quality").build(), java.lang.Boolean.class, true,
                         "false"));
         codeToMetadataSpecMap.put(
                 "Room",
@@ -436,9 +433,6 @@ public class ImportSpacesTask extends CustomTask {
                      */
                     if (type.equals("Room")) {
                         metadata.put("observations", bean.observations);
-                        if (bean.area != null) {
-                            metadata.put("area", bean.area.toString());
-                        }
                         metadata.put("description", bean.description);
                         metadata.put("ageQualitity", dealWithBooleans(bean.ageQuality));
                         metadata.put("distanceFromSanitaryInstalationsQuality",
@@ -501,7 +495,7 @@ public class ImportSpacesTask extends CustomTask {
         initMetadataSpecMap();
         doClassifications(gson);
         processSpaces(gson);
-//        processOccupations(gson);
+        processOccupations(gson);
     }
 
     public void processOccupations(Gson gson) throws FileNotFoundException {
