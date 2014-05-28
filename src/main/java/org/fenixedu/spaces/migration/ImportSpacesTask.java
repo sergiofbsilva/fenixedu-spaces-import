@@ -495,7 +495,7 @@ public class ImportSpacesTask extends CustomTask {
         initMetadataSpecMap();
         doClassifications(gson);
         processSpaces(gson);
-        processOccupations(gson);
+//        processOccupations(gson);
     }
 
     public void processOccupations(Gson gson) throws FileNotFoundException {
@@ -665,6 +665,9 @@ public class ImportSpacesTask extends CustomTask {
         for (InformationBean infoBean : spaceBean.beans()) {
             if (spaceBean.examCapacity != null) {
                 infoBean.getMetadata().put("examCapacity", spaceBean.examCapacity.toString());
+            }
+            if (infoBean.getAllocatableCapacity() == null && spaceBean.normalCapacity != null) {
+                infoBean.setAllocatableCapacity(spaceBean.normalCapacity);
             }
             space.bean(infoBean);
         }
